@@ -216,15 +216,17 @@ def cores_and_memory():
 
 
 def cores_and_memory_graphs():
-    sizes = [["big",17,"20","b"],["medium",10,"15","m"],["small",5,"7","s"]] ## Tuples of size of benchmark, gigas, partitions and prefix for the file names
+    sizes = [["small",5,"7","s"]]#["big",17,"20","b"]["medium",7,"10","m"],, ## Tuples of size of benchmark, gigas, partitions and prefix for the file names
     conf_list_graph = [
-            [['spark.executor.memory','1g'],['spark.executor.cores','1']],
-            [['spark.executor.memory','2g'],['spark.executor.cores','1']],
-            [['spark.executor.memory','3g'],['spark.executor.cores','4']],
-            [['spark.executor.memory','4g'],['spark.executor.cores','1']],
-            [['spark.executor.memory','4g'],['spark.executor.cores','3']],
-            [['spark.executor.memory','6g'],['spark.executor.cores','1']],
-            [['spark.executor.memory','7g'],['spark.executor.cores','2']],
+                [['spark.executor.memory','1g'],['spark.executor.cores','1']],
+                [['spark.executor.memory','2g'],['spark.executor.cores','1']],
+                [['spark.executor.memory','2g'],['spark.executor.cores','2']],
+                [['spark.executor.memory','2g'],['spark.executor.cores','3']],
+                [['spark.executor.memory','3g'],['spark.executor.cores','1']],
+                [['spark.executor.memory','3g'],['spark.executor.cores','4']],
+                [['spark.executor.memory','4g'],['spark.executor.cores','1']],
+                [['spark.executor.memory','4g'],['spark.executor.cores','3']],
+                [['spark.executor.memory','6g'],['spark.executor.cores','1']],
             ]
     for s in sizes:
         change_defaults_to(s[0])
@@ -235,7 +237,7 @@ def cores_and_memory_graphs():
             sp.launchShortestPaths(conf,defaultShortest)
             sp.launchSVDPlus(conf,defaultSVD)
             sp.launchConnectedComponent(conf,defaultConC)
-            sp.launchStronglyConnnectedComponent(conf,defaultStronglyConnected)
+            #sp.launchStronglyConnnectedComponent(conf,defaultStronglyConnected)
             sp.launchTriangleCount(conf,defaultTriangle)
             wipe_output() ## clear the output so we don't fill the space
         wipe_files() ## Clear the files generated for the benchmark

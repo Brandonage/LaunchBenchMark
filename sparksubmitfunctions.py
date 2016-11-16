@@ -3,7 +3,7 @@ import requests
 from random import shuffle
 import socket
 from time import sleep
-import optimiser
+#import optimiser
 
 spark_submit = "/opt/spark/bin/spark-submit"
 commonjar = "/opt/spark/BenchMark-1.0-SNAPSHOT.jar"
@@ -13,7 +13,7 @@ root_to_hibench = "/home/abrandon/HiBench-master"
 path_to_dfk = 'mydfk'
 path_to_model = 'mymodel'
 
-opt = optimiser.Optimiser(path_to_dfk,path_to_model)
+#opt = optimiser.Optimiser(path_to_dfk,path_to_model)
 
 
 def measure_mean_energy(start,end):
@@ -287,8 +287,8 @@ def launchPageRank(conf,params):  ## ${INOUT_SCHEME}${INPUT_HDFS} ${INOUT_SCHEME
     p = subprocess.call(args)
 
 def launchPCA(conf,params,optimise): ## ${INOUT_SCHEME}${INPUT_HDFS} ${DIMENSIONS}
-    if optimise:
-        conf = opt.get_best_conf('PCA',128)
+    # if optimise:
+    #     conf = opt.get_best_conf('PCA',128)
     args = buildPopenArgs("PCA.src.main.scala.PCAApp",conf,params,root_to_spark_bench + "PCA/target/PCAApp-1.0.jar",True)
     print args
     p = subprocess.call(args)
