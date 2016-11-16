@@ -180,7 +180,7 @@ def standard_configuration(): ## I want to see how applications behave with an s
 
 
 def cores_and_memory():
-    sizes = [["big",17,"16","b"],["medium",10,"9","m"],["small",5,"5","s"]] ## Tuples of size of benchmark, gigas, partitions and prefix for the file names
+    sizes = [["big",14,"18","b"],["medium",8,"12","m"]] ## Tuples of size of benchmark, gigas, partitions and prefix for the file names
     conf_list = [
                 [['spark.executor.memory','1g'],['spark.executor.cores','1']],
                 [['spark.executor.memory','2g'],['spark.executor.cores','1']],
@@ -200,15 +200,15 @@ def cores_and_memory():
             sp.launchWordCount(conf,defaultWC)
             sp.launchSort(conf,defaultSort)
             sp.launchGrep(conf,defaultGrep)
-            sp.launchLogisticRegression(conf,defaultLogistic)
+            #sp.launchLogisticRegression(conf,defaultLogistic)
             sp.launchLinearRegression(conf,defaultLinear)
-            sp.launchKMeans(conf,defaultKmeans)
+            #sp.launchKMeans(conf,defaultKmeans)
             sp.launchPCA(conf,defaultPCA)
             sp.launchSupportVectorMachine(conf,defaultSVM)
-            sp.launchDecisionTrees(conf,defaultDecTree)
+            #sp.launchDecisionTrees(conf,defaultDecTree)
             sp.launchGroupByTest(conf,defaultGroupBy)
             sp.launchRDDRelational(conf,defaultRDDRelational)
-            sp.launchNgrams(conf,defaultNgrams)
+            #sp.launchNgrams(conf,defaultNgrams)
             wipe_output() ## clear the output so we don't fill the space
         wipe_files() ## Clear the files generated for the benchmark
         p = subprocess.Popen('/home/abrandon/ParallelismExperiment/export.sh')

@@ -5,7 +5,7 @@ import pandas as pd
 import re
 
 dfk_path = "/Users/alvarobrandon/Experiments/memory_and_cores/BigBenchmark/pickle/dfk.pickle"
-model_path = '/Users/alvarobrandon/Experiments/memory_and_cores/BigBenchmark/pickle/clf.pickleSVR'
+model_path = '/Users/alvarobrandon/Experiments/memory_and_cores/BigBenchmark/pickle/clf.pickle'
 nodes = 5
 memory_node = 21504
 
@@ -97,7 +97,7 @@ class Optimiser:
                 ntasks_for_cluster = nslots_for_cluster
             memoryPerTask = exec_memory/execcores
             nWaves = newtasks/float(nslots_for_cluster)
-            return pd.Series([ntasks_for_node,memoryPerTask,nWaves,newtasks],index=['taskspernode_if','memoryPerTask_if','nWaves_if','taskCountsNum'])
+            return pd.Series([ntasks_for_node,nexec,ntasks_for_cluster,memoryPerTask,nslots_for_cluster,nWaves,newtasks],index=['taskspernode','nExecutorsPerNode','tasksincluster','memoryPerTask','slotsInCluster','nWaves','taskCountsNum'])
         def get_parallelism_features(conf,ref,nodes,node_memory,tasks):
             memory = parse_mb_exec(conf[0][1]) ## For this ammount of memory
             cores = int(conf[1][1])  ### and this ammount of cores
@@ -114,14 +114,10 @@ class Optimiser:
         #     listofconfs.append((conf[0][1],conf[1][1],predicted_duration)) ## The SUM of all the stages predicted with the different signatures gives us the shortes running configuration
         # return listofconfs                                ## Across the observations we have
         reference = self.dfkseen.loc[(self.dfkseen['spark.app.name']==application) & (self.dfkseen['status'].isin([3,2,1]))]## we get the stages for that app that we have seen
-        reference = reference.rename(index=str,columns={"memoryPerTask":"memoryPerTask_ref","nWaves":"nWaves_ref","taskspernode":"taskspernode_ref"})
-        reference['taskspernode_if']=""
-        reference['memoryPerTask_if']=""
-        reference["nWaves_if"]=""
         listofconfs = []
         for conf in self.conf_list: ## we get the parallelism values for that conf
             input_parallelism_df = get_parallelism_features(conf,reference,nodes=self.nodes,node_memory=self.memory,tasks=for_ntasks) ## Calculate the if parallelism metrics for this app and this conf
-            reference[['taskspernode_if','memoryPerTask_if','nWaves_if','taskCountsNum']]=input_parallelism_df # we set the slice
+            reference[['taskspernode','nExecutorsPerNode','tasksincluster','memoryPerTask','slotsInCluster','nWaves','taskCountsNum']]=input_parallelism_df # we set the slice
             predicted_duration =  self.predict_total_duration_ml(reference) ## This duration is going to be predicted for all the stages and for signatures of different sizes (tasksCountThatRunned) <<<<<-----
             listofconfs.append((conf[0][1],conf[1][1],predicted_duration)) ## The SUM of all the stages predicted with the different signatures gives us the shortes running configuration
         return listofconfs                                ## Across the observations we have
