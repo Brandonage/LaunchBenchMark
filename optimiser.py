@@ -3,16 +3,21 @@ from sklearn.externals import joblib
 from math import ceil
 import pandas as pd
 import re
+from sklearn import preprocessing
+from sklearn.neighbors import NearestNeighbors
 
 dfk_path = "/Users/alvarobrandon/Experiments/memory_and_cores/BigBenchmark/pickle/dfk.pickle"
+dfapps_path = "/Users/alvarobrandon/Experiments/memory_and_cores/BigBenchmark/pickle/dfapps.pickle"
 model_path = '/Users/alvarobrandon/Experiments/memory_and_cores/BigBenchmark/pickle/clf.pickle'
+cluster_path = '/Users/alvarobrandon/Experiments/memory_and_cores/BigBenchmark/pickle/cluster.pickle'
+normaliser_path = '/Users/alvarobrandon/Experiments/memory_and_cores/BigBenchmark/pickle/normaliser.pickle'
+benchmark_apps = ['Spark PCA Example','SupporVectorMachine','Grep','Spark ShortestPath Application','RDDRelation','Spark ConnectedComponent Application']
 nodes = 5
 memory_node = 21504
 
 class Optimiser:
 
     conf_list = [
-                [['spark.executor.memory','1g'],['spark.executor.cores','1']],
                 [['spark.executor.memory','2g'],['spark.executor.cores','1']],
                 [['spark.executor.memory','2g'],['spark.executor.cores','2']],
                 [['spark.executor.memory','2g'],['spark.executor.cores','3']],
@@ -20,13 +25,19 @@ class Optimiser:
                 [['spark.executor.memory','3g'],['spark.executor.cores','4']],
                 [['spark.executor.memory','4g'],['spark.executor.cores','1']],
                 [['spark.executor.memory','4g'],['spark.executor.cores','3']],
-                [['spark.executor.memory','4g'],['spark.executor.cores','6']]
+                [['spark.executor.memory','4g'],['spark.executor.cores','6']],
+                [['spark.executor.memory','6g'],['spark.executor.cores','1']],
+                [['spark.executor.memory','7g'],['spark.executor.cores','2']]
                 ]
 
-    def __init__(self,dfk_path,model_path,nod,mem):
+    def __init__(self,dfk_path,model_path,cluster_path, normaliser_path, nod,mem):
         self.clf = joblib.load(model_path)
+        self.normaliser = joblib.load(normaliser_path)
+        self.cluster = joblib.load(cluster_path)
         self.dfk = read_pickle(dfk_path)
-        self.dfkseen = pd.DataFrame(columns=self.dfk.columns)
+        self.dfapps = read_pickle(dfapps_path)
+        self.dfkseen = self.dfk.loc[~self.dfk['spark.app.name'].isin(benchmark_apps)]
+        self.dfappsseen = self.dfapps.loc[~self.dfapps['spark.app.name'].isin(benchmark_apps)]
         self.nodes = nod
         self.memory = mem
 
@@ -49,22 +60,65 @@ class Optimiser:
         return self.dfk.loc[(self.dfk['spark.app.name']==application) & (self.dfk['taskCountsNum']==ntasks) ]['appId'].unique()
 
     def get_appid_for_ntasks_and_conf(self,application,ntasks,conf):
-        return self.dfk.loc[(self.dfk['spark.app.name']==application) & (self.dfk['taskCountsNum']==ntasks) & (self.dfk['spark.executor.memory']==conf[0])
+        try:
+            return self.dfk.loc[(self.dfk['spark.app.name']==application) & (self.dfk['taskCountsNum']==ntasks) & (self.dfk['spark.executor.memory']==conf[0])
                             & (self.dfk['spark.executor.cores']==conf[1])]['appId'].unique()[0]
+        except IndexError:
+            return 'no app'
+
     def add_to_seen(self,application,ntasks,conf):
         appid = self.get_appid_for_ntasks_and_conf(application,ntasks,conf)  ## we get the appid of the default execution for that application with ntasks
         toadd = self.dfk.loc[(self.dfk['appId']==appid)] ## we get the stages that we have to add to the already seen metrics
         self.dfkseen = self.dfkseen.append(toadd)
+        toadd = self.dfapps.loc[(self.dfapps['appId']==appid)]
+        self.dfappsseen= self.dfappsseen.append(toadd)
 
     def predict_total_duration_ml(self,reference):
-        drop_this_for_training = ['appId','id','jobId','name','stageId','spark.app.name','spark.executor.memory','spark.executor.cores', 'taskCountsRunning' ,
+        drop_this_for_training = ['appId','id','jobId','name','stageId','spark.app.name','spark.executor.memory', 'taskCountsRunning' ,
                                   'taskCountsSucceeded','slotsInCluster','nExecutorsPerNode', 'tasksincluster'#'totalTaskDuration',
-                                  ,'ExecutorRunTime', 'ResultSize','ResultSerializationTime','memoryPerTask','spark.executor.bytes']
+                                  ,'ExecutorRunTime', 'ResultSize','ResultSerializationTime','disk_read','disk_write','net_recv','net_send',
+                                  'io_total_read','io_total_write','SchedulerDelayTime','ExecutorDeserializeTime','SchedulerDelayTime','status','paging_in','paging_out','cpu_usr','cpu_wait','cpu_idl','sys_contswitch','sys_interrupts'] #,'spark.executor.bytes','tasksincluster'
         input = reference.drop(drop_this_for_training,axis=1).drop('duration',axis=1)
         input = input.fillna(0)
-        result = self.clf.predict(input)
+        input = input.sort(axis=1)
+        result = self.clf.predict(input) ## remember to always sort a pandas dataframe when passing it to a sklearn method
         return result.sum()
 
+    def predict_conf_neighbours(self,application,for_ntasks):
+        train = self.dfkseen.loc[(self.dfkseen['inputspark.executor.memory']=='1g') & (self.dfkseen['spark.executor.cores']=='1')]
+        train = train.fillna(0)
+        drop_for_clustering = ['appId','id','jobId','name','stageId','spark.executor.memory','spark.executor.cores', 'taskCountsRunning' , ## we have to drop parallelism features, noisy ones
+                                  'taskCountsSucceeded','slotsInCluster','nExecutorsPerNode', 'tasksincluster'#'totalTaskDuration',     ## and all the identifiers (stageId, jobId and so on)
+                                  , 'ResultSize','ResultSerializationTime','memoryPerTask','spark.executor.bytes','disk_read','disk_write','net_recv','net_send',
+                                  'paging_in','paging_out','io_total_read','io_total_write','duration','tasksincluster','taskspernode','nWaves','spark.app.name']
+        train_x = train.drop(drop_for_clustering,axis=1)
+        scaler = preprocessing.StandardScaler().fit(train_x)
+        X = scaler.transform(train_x)
+        clf = NearestNeighbors(n_neighbors=2)
+        clf.fit(X)
+        input = self.dfkseen.loc[(self.dfkseen['spark.app.name']==application) & (self.dfkseen['status'].isin([3,1]))]
+        input = input.fillna(0)
+        input = input.drop(drop_for_clustering,axis=1)
+        res = clf.kneighbors(self.normaliser.transform(input))
+        neighbours = train.iloc[res[1][0]]
+        names = neighbours.tail(1)['spark.app.name'].unique() ## I ignore the first row because it's the point itself
+        tasks = neighbours.tail(1)['taskCountsNum'].unique()
+        app = self.dfkseen.loc[(self.dfkseen['spark.app.name'].isin(names)) & (self.dfkseen['taskCountsNum'].isin(tasks))].groupby("appId")["stageId"].count().idxmax()
+        memory = (self.dfapps[self.dfapps['appId']==app])['spark.executor.memory'].values[0]
+        cores = (self.dfapps[self.dfapps['appId']==app])['spark.executor.cores'].values[0]
+        return memory,cores
+
+
+
+
+
+    def isinbenchmark(self,conf,application,for_ntasks):
+        pair = [conf[0][1],conf[1][1]]
+        res = self.get_appid_for_ntasks_and_conf(application,for_ntasks,pair)
+        if res=='no app':
+            return False
+        else:
+            return True
 
 
     def predict_conf(self,application,for_ntasks):
@@ -93,7 +147,8 @@ class Optimiser:
                 ntasks_for_cluster = nslots_for_cluster
             memoryPerTask = exec_memory/execcores
             nWaves = newtasks/float(nslots_for_cluster)
-            return pd.Series([ntasks_for_node,nexec,ntasks_for_cluster,memoryPerTask,nslots_for_cluster,nWaves,newtasks],index=['taskspernode','nExecutorsPerNode','tasksincluster','memoryPerTask','slotsInCluster','nWaves','taskCountsNum'])
+            return pd.Series([ntasks_for_node,nexec,ntasks_for_cluster,memoryPerTask,nslots_for_cluster,nWaves,newtasks,execmem,execcores],index=['taskspernode','nExecutorsPerNode','tasksincluster','memoryPerTask',
+                                                                                                                        'slotsInCluster','nWaves','taskCountsNum','spark.executor.bytes','spark.executor.cores'])
         def get_parallelism_features(conf,ref,nodes,node_memory,tasks):
             memory = parse_mb_exec(conf[0][1])
             cores = int(conf[1][1])
@@ -101,20 +156,29 @@ class Optimiser:
             return res
 
         reference = self.dfkseen.loc[(self.dfkseen['spark.app.name']==application) & (self.dfkseen['status']!=4) & (self.dfkseen['spark.executor.memory']=='1g')
-                                        & (self.dfkseen['spark.executor.cores']=='1')] ## we get the stages for that app that we have seen
+                                        & (self.dfkseen['spark.executor.cores']=='1') & (self.dfkseen['tasksThatRunned']>24)] ## we get the stages for that app that we have seen
         listofconfs = []
         for conf in self.conf_list: ## we get the parallelism values for that conf
-            input_parallelism_df = get_parallelism_features(conf,reference,nodes=self.nodes,node_memory=self.memory,tasks=for_ntasks)
-            reference[['taskspernode','nExecutorsPerNode','tasksincluster','memoryPerTask','slotsInCluster','nWaves','taskCountsNum']]=input_parallelism_df # we set the slice
-            predicted_duration =  self.predict_total_duration_ml(reference) ## This duration is going to be predicted for all the stages and for signatures of different sizes (tasksCountThatRunned)
-            listofconfs.append((conf[0][1],conf[1][1],predicted_duration)) ## The SUM of all the stages predicted with the different signatures gives us the shortes running configuration
+            if self.isinbenchmark(conf,application,for_ntasks):  # if we have the configuration in the benchmark we will try that configuration and predict its values
+                input_parallelism_df = get_parallelism_features(conf,reference,nodes=self.nodes,node_memory=self.memory,tasks=for_ntasks)
+                reference = reference.drop(['taskspernode','nExecutorsPerNode','tasksincluster','memoryPerTask','slotsInCluster','nWaves','taskCountsNum','spark.executor.bytes','spark.executor.cores'],axis=1)
+                reference[['taskspernode','nExecutorsPerNode','tasksincluster','memoryPerTask','slotsInCluster','nWaves','taskCountsNum','spark.executor.bytes','spark.executor.cores']]=input_parallelism_df # we set the slice
+                predicted_duration =self.predict_total_duration_ml(reference) ## This duration is going to be predicted for all the stages and for signatures of different sizes (tasksCountThatRunned)
+                listofconfs.append((conf[0][1],conf[1][1],predicted_duration)) ## The SUM of all the stages predicted with the different signatures gives us the shortes running configuration
         return listofconfs                                ## Across the observations we have
 
     def get_best_conf(self,application,ntasks):
         if self.app_already_seen(application): # if we have already seen the application
-            list = self.predict_conf(application,ntasks) # we can optimise it with we've seen so far
-            best_tuple = [item for item in list if item[2]==min(zip(*list)[2])] ##We get the tuple that has the minimum duration in the list of tuples
-            return best_tuple[0][0], best_tuple[0][1] ## best_tuple is a list of one triple [(memory,cores,duration)]
+            status = self.dfappsseen.loc[(self.dfappsseen['spark.app.name']==application)]['status']
+            if all(~status.isin([2])):
+                best_tuple = self.predict_conf_neighbours(application,ntasks)
+                self.add_to_seen(application,ntasks,best_tuple)
+                return best_tuple[0], best_tuple[1]
+            else:
+                list = self.predict_conf(application,ntasks) # we can optimise it with we've seen so far
+                best_tuple = [item for item in list if item[2]==min(zip(*list)[2])] ##We get the tuple that has the minimum duration in the list of tuples
+                #self.add_to_seen(application,ntasks,(best_tuple[0][0],best_tuple[0][1]))
+                return best_tuple[0][0], best_tuple[0][1] ## best_tuple is a list of one triple [(memory,cores,duration)]
         else:
             self.add_to_seen(application,ntasks,('1g','1'))
             return '1g', '1'
@@ -122,11 +186,13 @@ class Optimiser:
 
 
 if __name__ == '__main__':
-    opt = Optimiser(dfk_path,model_path,nodes,memory_node)
+    opt = Optimiser(dfk_path,model_path,cluster_path, normaliser_path, nodes,memory_node)
     sequence = [['Spark PCA Example',81],['Spark PCA Example',144],['Spark PCA Example',40],
                 ['Grep',81],['Grep',128],['Grep',40],
                 ['SupporVectorMachine',81],['SupporVectorMachine',144],['SupporVectorMachine',40],
-                ['DecisionTree classification Example',81],['DecisionTree classification Example',144],['DecisionTree classification Example',40]]
+                ['Spark ShortestPath Application',90],['Spark ShortestPath Application',159],['Spark ShortestPath Application',65],
+                ['RDDRelation',81],['RDDRelation',144],['RDDRelation',43],
+                ['Spark ConnectedComponent Application',90],['Spark ConnectedComponent Application',159],['Spark ConnectedComponent Application',65]]
     optimalduration = []
     list_of_confs = []
     for s in sequence:

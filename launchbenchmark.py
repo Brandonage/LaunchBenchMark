@@ -216,15 +216,17 @@ def cores_and_memory():
 
 
 def cores_and_memory_graphs():
-    sizes = [["big",17,"20","b"],["medium",10,"15","m"],["small",5,"7","s"]] ## Tuples of size of benchmark, gigas, partitions and prefix for the file names
+    sizes = [["small",3,"5","s"]] ## Tuples of size of benchmark, gigas, partitions and prefix for the file names
     conf_list_graph = [
-            [['spark.executor.memory','1g'],['spark.executor.cores','1']],
-            [['spark.executor.memory','2g'],['spark.executor.cores','1']],
-            [['spark.executor.memory','3g'],['spark.executor.cores','4']],
-            [['spark.executor.memory','4g'],['spark.executor.cores','1']],
-            [['spark.executor.memory','4g'],['spark.executor.cores','3']],
-            [['spark.executor.memory','6g'],['spark.executor.cores','1']],
-            [['spark.executor.memory','7g'],['spark.executor.cores','2']],
+                [['spark.executor.memory','1g'],['spark.executor.cores','1']],
+                [['spark.executor.memory','2g'],['spark.executor.cores','1']],
+                [['spark.executor.memory','2g'],['spark.executor.cores','2']],
+                [['spark.executor.memory','2g'],['spark.executor.cores','3']],
+                [['spark.executor.memory','3g'],['spark.executor.cores','1']],
+                [['spark.executor.memory','3g'],['spark.executor.cores','4']],
+                [['spark.executor.memory','4g'],['spark.executor.cores','1']],
+                [['spark.executor.memory','4g'],['spark.executor.cores','3']],
+                [['spark.executor.memory','6g'],['spark.executor.cores','1']],
             ]
     for s in sizes:
         change_defaults_to(s[0])
@@ -328,17 +330,6 @@ def best_configuration_is_constant():
                 sp.launchSort(conf,defaultSort)
                 wipe_output()
     p = subprocess.Popen('/home/abrandon/ParallelismExperiment/export.sh')
-
-
-
-def evaluation_benchmark_batch(optimise_switch,conf):
-    sp.launchPCA(conf,defaultPCA,optimise=optimise_switch)
-    sp.launchSVDPlus(conf,defaultSVD,optimse=optimise_switch)
-    sp.launchSupportVectorMachine(conf,defaultSVM,optimise=optimise_switch)
-    sp.launchGrep(conf,defaultGrep,optimise=optimise_switch)
-
-
-
 
 
 
