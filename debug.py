@@ -1,4 +1,5 @@
 import optimiser
+import pandas as pd
 
 
 dfk_path = "/Users/alvarobrandon/Experiments/memory_and_cores/BigBenchmark/pickle/dfk.pickle"
@@ -10,6 +11,8 @@ benchmark_apps = ['Spark PCA Example','SupporVectorMachine','Grep','Spark Shorte
 nodes = 5
 memory_node = 21504
 
+
+
 if __name__ == '__main__':
     opt = optimiser.Optimiser(dfk_path,model_path,cluster_path, normaliser_path, nodes,memory_node)
     sequence = [['Spark PCA Example',81],['Spark PCA Example',144],['Spark PCA Example',40],
@@ -18,18 +21,10 @@ if __name__ == '__main__':
                 #['Spark ShortestPath Application',90],['Spark ShortestPath Application',159],['Spark ShortestPath Application',65],
                 ['RDDRelation',81],['RDDRelation',144],['RDDRelation',43]]
                 #['Spark ConnectedComponent Application',90],['Spark ConnectedComponent Application',159],['Spark ConnectedComponent Application',65]]
-    optimalduration = []
-    list_of_confs = []
     for s in sequence:
         conf = opt.get_best_conf(s[0],s[1])
-        list_of_confs.append((conf,s[0],s[1]))
-        optimalduration.append(opt.get_duration_app_and_conf(s[0],s[1],conf))
-    nonoptimalduration = []
-    bestduration = []
-    best_real_confs = []
-    for s in sequence:
-        nonoptimalduration.append(opt.get_duration_app_and_conf(s[0],s[1],('1g','1')))
-        best_real_confs.append(opt.get_real_best_conf(s[0],s[1]))
-    bestduration = zip(*best_real_confs)[2]
-    sum(bestduration)/float(sum(nonoptimalduration))
-    sum(optimalduration)/float(sum(nonoptimalduration))
+    best_real_df = pd.DataFrame(opt.best_real_confs)
+    best_conf_df = pd.DataFrame(opt.best_confs)
+    non_optimal_df = pd.DataFrame(opt.non_optimal_confs)
+    best_real_df.duration.sum()/float(non_optimal_df.duration.sum())
+    best_conf_df.duration.sum()/float(non_optimal_df.duration.sum())

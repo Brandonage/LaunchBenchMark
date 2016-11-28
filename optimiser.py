@@ -15,6 +15,7 @@ benchmark_apps = ['Spark PCA Example','SupporVectorMachine','Grep','Spark Shorte
 nodes = 5
 memory_node = 21504
 
+
 class Optimiser:
 
     conf_list = [
@@ -40,6 +41,10 @@ class Optimiser:
         self.dfappsseen = self.dfapps.loc[~self.dfapps['spark.app.name'].isin(benchmark_apps)]
         self.nodes = nod
         self.memory = mem
+        self.best_real_confs = []
+        self.best_confs = []
+        self.non_optimal_confs = []
+
 
     def get_duration_app_and_conf(self,app,n,conf): ## conf is a tuple of spark.executor.memory and spark.executor.cores
         appid = self.get_appid_for_ntasks_and_conf(app,n,conf)
@@ -48,10 +53,11 @@ class Optimiser:
 
     def get_real_best_conf(self,app,n):
         list_apps = self.get_appid_for_ntasks(app,n)
-        g = self.dfk[(self.dfk['spark.app.name']==app) & (self.dfk['appId'].isin(list_apps))].groupby('appId').sum()
+        g = self.dfk[(self.dfk['spark.app.name']==app) & (self.dfk['appId'].isin(list_apps)) & (self.dfk['spark.executor.cores']!='1')
+                     & (self.dfk['spark.executor.bytes']!=1024)].groupby('appId').sum()
         bestapp = g['duration'].idxmin()
         pair = self.dfk.loc[self.dfk['appId']==bestapp][['spark.executor.memory','spark.executor.cores']].head(1).values
-        return pair[0][0], pair[0][1],g.duration.min()
+        return pair[0][0], pair[0][1]
 
     def app_already_seen(self,application):
         return any((self.dfkseen['spark.app.name']==application))
@@ -85,7 +91,7 @@ class Optimiser:
         return result.sum()
 
     def predict_conf_neighbours(self,application,for_ntasks):
-        train = self.dfkseen.loc[(self.dfkseen['inputspark.executor.memory']=='1g') & (self.dfkseen['spark.executor.cores']=='1')]
+        train = self.dfkseen.loc[(self.dfkseen['spark.executor.memory']=='1g') & (self.dfkseen['spark.executor.cores']=='1')]
         train = train.fillna(0)
         drop_for_clustering = ['appId','id','jobId','name','stageId','spark.executor.memory','spark.executor.cores', 'taskCountsRunning' , ## we have to drop parallelism features, noisy ones
                                   'taskCountsSucceeded','slotsInCluster','nExecutorsPerNode', 'tasksincluster'#'totalTaskDuration',     ## and all the identifiers (stageId, jobId and so on)
@@ -94,15 +100,15 @@ class Optimiser:
         train_x = train.drop(drop_for_clustering,axis=1)
         scaler = preprocessing.StandardScaler().fit(train_x)
         X = scaler.transform(train_x)
-        clf = NearestNeighbors(n_neighbors=2)
+        clf = NearestNeighbors(n_neighbors=4)
         clf.fit(X)
         input = self.dfkseen.loc[(self.dfkseen['spark.app.name']==application) & (self.dfkseen['status'].isin([3,1]))]
         input = input.fillna(0)
         input = input.drop(drop_for_clustering,axis=1)
         res = clf.kneighbors(self.normaliser.transform(input))
         neighbours = train.iloc[res[1][0]]
-        names = neighbours.tail(1)['spark.app.name'].unique() ## I ignore the first row because it's the point itself
-        tasks = neighbours.tail(1)['taskCountsNum'].unique()
+        names = neighbours.loc[neighbours['spark.app.name']!=application]['spark.app.name'].unique() ## I ignore the first row because it's the point itself
+        tasks = neighbours.loc[neighbours['spark.app.name']!=application]['taskCountsNum'].unique()
         app = self.dfkseen.loc[(self.dfkseen['spark.app.name'].isin(names)) & (self.dfkseen['taskCountsNum'].isin(tasks))].groupby("appId")["stageId"].count().idxmax()
         memory = (self.dfapps[self.dfapps['appId']==app])['spark.executor.memory'].values[0]
         cores = (self.dfapps[self.dfapps['appId']==app])['spark.executor.cores'].values[0]
@@ -169,18 +175,30 @@ class Optimiser:
 
     def get_best_conf(self,application,ntasks):
         if self.app_already_seen(application): # if we have already seen the application
-            status = self.dfappsseen.loc[(self.dfappsseen['spark.app.name']==application)]['status']
+            status = self.dfappsseen.loc[(self.dfappsseen['spark.app.name']==application) & (self.dfappsseen['spark.executor.bytes']==1024) & (self.dfappsseen['spark.executor.cores']=='1')]['status'] ## If it crashed with one gigabyte keep calling the kmeans
             if all(~status.isin([2])):
                 best_tuple = self.predict_conf_neighbours(application,ntasks)
                 self.add_to_seen(application,ntasks,best_tuple)
+                self.best_confs.append({"conf":best_tuple,"duration":self.get_duration_app_and_conf(application,ntasks,best_tuple),"application":application,"type":"Predicted Conf"})
+                best_real_tuple = self.get_real_best_conf(application,ntasks)
+                self.best_real_confs.append({"conf":best_real_tuple,"duration":self.get_duration_app_and_conf(application,ntasks,best_real_tuple),"application":application,"type":"Best Real Conf"})
+                self.non_optimal_confs.append({"conf":("1g","1"),"duration":self.get_duration_app_and_conf(application,ntasks,('1g','1')),"application":application,"type":"Default Conf"})
                 return best_tuple[0], best_tuple[1]
             else:
                 list = self.predict_conf(application,ntasks) # we can optimise it with we've seen so far
                 best_tuple = [item for item in list if item[2]==min(zip(*list)[2])] ##We get the tuple that has the minimum duration in the list of tuples
-                #self.add_to_seen(application,ntasks,(best_tuple[0][0],best_tuple[0][1]))
+                best_tuple = (best_tuple[0][0],best_tuple[0][1])
+                self.add_to_seen(application,ntasks,best_tuple)
+                self.best_confs.append({"conf":best_tuple,"duration":self.get_duration_app_and_conf(application,ntasks,best_tuple),"application":application,"type":"Predicted Conf"})
+                best_real_tuple = self.get_real_best_conf(application,ntasks)
+                self.best_real_confs.append({"conf":best_real_tuple,"duration":self.get_duration_app_and_conf(application,ntasks,best_real_tuple),"application":application,"type":"Best Real Conf"})
+                self.non_optimal_confs.append({"conf":("1g","1"),"duration":self.get_duration_app_and_conf(application,ntasks,('1g','1')),"application":application,"type":"Default Conf"})
                 return best_tuple[0][0], best_tuple[0][1] ## best_tuple is a list of one triple [(memory,cores,duration)]
         else:
             self.add_to_seen(application,ntasks,('1g','1'))
+            self.best_confs.append({"conf":("1g","1"),"duration":self.get_duration_app_and_conf(application,ntasks,('1g','1')),"application":application,"type" : "Predicted Conf"})
+            self.best_real_confs.append({"conf":("1g","1"),"duration":self.get_duration_app_and_conf(application,ntasks,('1g','1')),"application":application,"type":"Best Real Conf"})
+            self.non_optimal_confs.append({"conf":("1g","1"),"duration":self.get_duration_app_and_conf(application,ntasks,('1g','1')),"application":application,"type":"Default Conf"})
             return '1g', '1'
 
 
@@ -195,16 +213,14 @@ if __name__ == '__main__':
                 ['Spark ConnectedComponent Application',90],['Spark ConnectedComponent Application',159],['Spark ConnectedComponent Application',65]]
     optimalduration = []
     list_of_confs = []
+    row = {}
     for s in sequence:
         conf = opt.get_best_conf(s[0],s[1])
-        list_of_confs.append((conf,s[0],s[1]))
-        optimalduration.append(opt.get_duration_app_and_conf(s[0],s[1],conf))
-    nonoptimalduration = []
-    bestduration = []
-    best_real_confs = []
-    for s in sequence:
-        nonoptimalduration.append(opt.get_duration_app_and_conf(s[0],s[1],('1g','1')))
-        best_real_confs.append(opt.get_real_best_conf(s[0],s[1]))
+        best_real_conf = opt.get_real_best_conf(s[0],s[1])
+        best_duration = opt.get_duration_app_and_conf(s[0],s[1],best_real_conf)
+        non_optimal = opt.get_duration_app_and_conf(s[0],s[1],('1g','1'))
+        row.update({"prediced_conf": conf, "application_name" : s[0], "ntasks" : s[1]})
+        list_of_confs.append(row)
     bestduration = zip(*best_real_confs)[2]
     sum(bestduration)/float(sum(nonoptimalduration))
     sum(optimalduration)/float(sum(nonoptimalduration))
