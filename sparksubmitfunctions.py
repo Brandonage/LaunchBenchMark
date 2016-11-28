@@ -286,9 +286,7 @@ def launchPageRank(conf,params):  ## ${INOUT_SCHEME}${INPUT_HDFS} ${INOUT_SCHEME
     print args
     p = subprocess.call(args)
 
-def launchPCA(conf,params,optimise): ## ${INOUT_SCHEME}${INPUT_HDFS} ${DIMENSIONS}
-    # if optimise:
-    #     conf = opt.get_best_conf('PCA',128)
+def launchPCA(conf,params): ## ${INOUT_SCHEME}${INPUT_HDFS} ${DIMENSIONS}
     args = buildPopenArgs("PCA.src.main.scala.PCAApp",conf,params,root_to_spark_bench + "PCA/target/PCAApp-1.0.jar",True)
     print args
     p = subprocess.call(args)
